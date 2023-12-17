@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>艺人搭配</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <style>
+        .container { display: flex; max-width: 1400px; margin: auto; }
+        .left, .right { flex: 1; padding: 1em; border: 1px solid #ccc; margin: 1em; }
+        .ok { color: green; font-weight: bold; }
+        .no { color: red; font-weight: bold; }
+        .added { background-color: green; }
+        .disabled { background-color: gray; }
+        button { margin-left: 1em; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
+        .day1 { background-color: yellow; }
+        .day2 { background-color: orange; }
+        .button-container { display: flex; justify-content: space-between; }
+    </style>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/file-saver/dist/FileSaver.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="left">
+            <input type="file" id="excel-file" accept=".xls,.xlsx" />
+            <table id="artist-table"></table>
+        </div>
+        <div class="right">
+            <h2>DAY1</h2>
+            <table id="list-3-23"></table>
+            <h2>DAY2</h2>
+            <table id="list-3-24"></table>
+    <p id="total-all"></p>
+            <button onclick="exportExcel()">导出Excel</button>
+        </div>
+    </div>
+
+    <script>
+        var schedule = { '3-23': [], '3-24': [] };
+
+        document.getElementById('excel-file').addEventListener('change', function(e) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var data = new Uint8Array(e.target.result);
+                var workbook = XLSX.read(data, {type: 'array'});
+                var worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+                displayData(jsonData);
+            };
+            reader.readAsArrayBuffer(e.target.files[0]);
+        });
+
+        function displayData(data) {
+            var table = document.getElementById('artist-table');
+            data.forEach(function(row, index) {
+                if (index === 0) return;
+                var tr = document.createElement('tr');
+                var tdIndex = document.createElement('td');
+                tdIndex.textContent = index;
+                tr.appendChild(tdIndex);
+                row.forEach(function(cell, i) {
+                    var td = document.createElement('td');
+                    if (i === 4 || i === 5) {
+                        td.innerHTML = cell === 'OK' ? '<span class="ok">OK</span>' : '<span class="no">NO</span>';
+                    } else {
+                        td.textContent = cell;
+                    }
+                    tr.appendChild(td);
+                });
+                var btnContainer = document.createElement('div');
+                btnContainer.className = 'button-container';
+                var btn1 = document.createElement('button');
+                btn1.textContent = '添加到DAY1';
+                btn1.style.backgroundColor = 'yellow';
+                btn1.disabled = row[4] !== 'OK' || isScheduled(row[0]);
+                btn1.addEventListener('click', function() {
+                    if (btn1.textContent === '添加到DAY1') {
+                        addToSchedule('3-23', row);
+                        btn1.textContent = '从DAY1删除';
+                        btn1.classList.add('added');
+                        tr.classList.add('day1');
+                        btn2.disabled = true;
+                    } else {
+                        removeFromSchedule('3-23', row);
+                        btn1.textContent = '添加到DAY1';
+                        btn1.classList.remove('added');
+                        tr.classList.remove('day1');
+                        btn2.disabled = row[5] !== 'OK';
+                    }
+                    updateButtons(row[0]);
+                });
+                btnContainer.appendChild(btn1);
+                var btn2 = document.createElement('button');
+                btn2.textContent = '添加到DAY2';
+                btn2.style.backgroundColor = 'orange';
+                btn2.disabled = row[5] !== 'OK' || isScheduled(row[0]);
+                btn2.addEventListener('click', function() {
+                    if (btn2.textContent === '添加到DAY2') {
+                        addToSchedule('3-24', row);
+                        btn2.textContent = '从DAY2删除';
+                        btn2.classList.add('added');
+                        tr.classList.add('day2');
+                        btn1.disabled = true;
+                    } else {
+                        removeFromSchedule('3-24', row);
+                        btn2.textContent = '添加到DAY2';
+                        btn2.classList.remove('added');
+                        tr.classList.remove('day2');
+                        btn1.disabled = row[4] !== 'OK';
+                    }
+                    updateButtons(row[0]);
+                });
+                btnContainer.appendChild(btn2);
+                tr.appendChild(btnContainer);
+                table.appendChild(tr);
+            });
+        }
+
+        function isScheduled(name) {
+            return schedule['3-23'].some(function(artist) { return artist[0] === name; }) ||
+                   schedule['3-24'].some(function(artist) { return artist[0] === name; });
+        }
+
+        function addToSchedule(date, artist) {
+            schedule[date].push(artist);
+            schedule[date].sort(function(a, b) { return b[2] - a[2]; });
+            updateList(date);
+            updateTotal(date);
+        }
+
+        function removeFromSchedule(date, artist) {
+            schedule[date] = schedule[date].filter(function(a) { return a[0] !== artist[0]; });
+            updateList(date);
+            updateTotal(date);
+        }
+
+        function updateList(date) {
+            var table = document.getElementById('list-' + date);
+            while (table.firstChild) {
+                table.removeChild(table.firstChild);
+            }
+            var tr = document.createElement('tr');
+            ['序号', '艺人', '价格'].forEach(function(header) {
+                var th = document.createElement('th');
+                th.textContent = header;
+                tr.appendChild(th);
+            });
+            table.appendChild(tr);
+            schedule[date].forEach(function(artist, index) {
+                var tr = document.createElement('tr');
+                [index + 1, artist[0], artist[2]].forEach(function(cell) {
+                    var td = document.createElement('td');
+                    td.textContent = cell;
+                    tr.appendChild(td);
+                });
+                var btn = document.createElement('button');
+                btn.textContent = '删除';
+                btn.addEventListener('click', function() {
+                    table.removeChild(tr);
+                    removeFromSchedule(date, artist);
+                    updateButtons(artist[0]);
+                });
+                tr.appendChild(btn);
+                table.appendChild(tr);
+            });
+        }
+
+        function updateButtons(name) {
+            var buttons = document.querySelectorAll('button.added');
+            buttons.forEach(function(button) {
+                if (button.parentNode.firstChild.nextSibling.textContent === name) {
+                    button.textContent = button.textContent.startsWith('从') ? '添加到' + button.textContent.slice(4) : '从' + button.textContent.slice(2) + '删除';
+                    button.classList.toggle('added');
+                    button.parentNode.parentNode.classList.toggle('day1');
+                    button.parentNode.parentNode.classList.toggle('day2');
+                }
+            });
+        }
+
+        function updateTotal(date) {
+            var total = schedule[date].reduce(function(sum, artist) { return sum + artist[2]; }, 0);
+            var p = document.getElementById('total-' + date);
+            if (!p) {
+                p = document.createElement('p');
+                p.id = 'total-' + date;
+                document.body.appendChild(p);
+            }
+            p.textContent = '艺人数量：' + schedule[date].length + '，总成本：' + total;
+            updateTotalAll();
+        }
+
+        function updateTotalAll() {
+            var total = schedule['3-23'].reduce(function(sum, artist) { return sum + artist[2]; }, 0) +
+                        schedule['3-24'].reduce(function(sum, artist) { return sum + artist[2]; }, 0);
+            var p = document.getElementById('total-all');
+            if (!p) {
+                p = document.createElement('p');
+                p.id = 'total-all';
+                document.body.appendChild(p);
+            }
+            p.textContent = '总艺人数：' + (schedule['3-23'].length + schedule['3-24'].length) + '，总成本：' + total;
+        }
+
+        function exportExcel() {
+            var wb = XLSX.utils.book_new();
+            var data = schedule['3-23'].concat([['']], schedule['3-24']);
+            var ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, '搭配结果');
+            XLSX.writeFile(wb, '搭配结果.xlsx');
+        }
+    </script>
+</body>
+</html>
